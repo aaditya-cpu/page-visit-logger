@@ -1,0 +1,186 @@
+Directory: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/export
+FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/export/export-to-excel.php
+Contents:
+<?php
+
+// Check for current user capabilities
+if (!current_user_can('manage_options')) {
+    wp_die('You do not have sufficient permissions to access this page.');
+}
+
+function export_logs_to_csv() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'page_visit_logs';
+
+    $filename = 'page-visits-' . date('Ymd') . '.csv';
+
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+
+    $output = fopen('php://output', 'w');
+
+    // Column headers
+    fputcsv($output, ['Time', 'URL', 'Query Params', 'IP Address']);
+
+    // Get data from database
+    $logs = $wpdb->get_results("SELECT * FROM $table_name ORDER BY time DESC", ARRAY_A);
+
+    foreach ($logs as $log) {
+        fputcsv($output, [$log['time'], $log['url'], $log['params'], $log['ip']]);
+    }
+
+    fclose($output);
+    exit;
+}
+
+// Trigger export function based on a custom action or condition
+if (isset($_GET['action']) && $_GET['action'] == 'export_to_csv') {
+    add_action('admin_init', 'export_logs_to_csv');
+}
+
+Directory: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/logger
+FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/logger/class-page-visit-logger.php
+Contents:
+<?php
+
+if (!class_exists('Page_Visit_Logger')) {
+    class Page_Visit_Logger {
+        public static function init() {
+            add_action('admin_menu', [__CLASS__, 'add_admin_menu']);
+            add_action('template_redirect', [__CLASS__, 'log_page_visit']);
+        }
+
+        public static function log_page_visit() {
+            if (!is_user_logged_in()) {
+                global $wpdb;
+                $table_name = $wpdb->prefix . 'page_visit_logs';
+                $current_url = home_url(add_query_arg($_GET));
+                $query_params = http_build_query($_GET);
+                $ip_address = $_SERVER['REMOTE_ADDR'];
+
+                $wpdb->insert(
+                    $table_name,
+                    [
+                        'time' => current_time('mysql', 1),
+                        'url' => $current_url,
+                        'query_params' => $query_params,
+                        'ip_address' => $ip_address,
+                    ]
+                );
+            }
+        }
+
+        public static function add_admin_menu() {
+            add_menu_page(
+                'Page Visit Logs',
+                'Visit Logs',
+                'manage_options',
+                'page-visit-logs',
+                [__CLASS__, 'display_admin_page'],
+                'dashicons-visibility',
+                6
+            );
+        }
+
+        public static function display_admin_page() {
+            include_once plugin_dir_path(__FILE__) . '/../views/admin-page.php';
+        }
+    }
+}
+
+FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/page-visit-logger.php
+Contents:
+<?php
+/**
+ * Plugin Name: Page Visit Logger
+ * Description: Logs page visits with query parameters, IPs, and supports exporting to Excel.
+ * Version: 1.0
+ * Author: Aaditya Goenka
+ */
+
+if (!defined('ABSPATH')) {
+    exit; // Exit if accessed directly.
+}
+
+function pvlogger_create_table() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'page_visit_logs';
+    $charset_collate = $wpdb->get_charset_collate();
+
+    $sql = "CREATE TABLE $table_name (
+        id mediumint(9) NOT NULL AUTO_INCREMENT,
+        time datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
+        url varchar(255) NOT NULL,
+        query_params text NOT NULL,
+        ip_address varchar(100) NOT NULL,
+        PRIMARY KEY  (id)
+    ) $charset_collate;";
+
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
+}
+
+register_activation_hook(__FILE__, 'pvlogger_create_table');
+
+require_once __DIR__ . '/logger/class-page-visit-logger.php';
+require_once __DIR__ . '/export/export-to-excel.php';
+
+add_action('plugins_loaded', ['Page_Visit_Logger', 'init']);
+
+
+FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/text.txt
+Contents:
+
+Directory: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/views
+FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/views/admin-page.php
+Contents:
+<?php
+
+global $wpdb;
+$table_name = $wpdb->prefix . 'page_visit_logs';
+$per_page = 100;
+$current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+$offset = ($current_page - 1) * $per_page;
+
+// Retrieve the logs from the database.
+$logs = $wpdb->get_results($wpdb->prepare(
+    "SELECT * FROM $table_name ORDER BY time DESC LIMIT %d OFFSET %d;",
+    $per_page,
+    $offset
+), ARRAY_A);
+
+// Calculate total logs for pagination.
+$total_logs = $wpdb->get_var("SELECT COUNT(id) FROM $table_name;");
+$total_pages = ceil($total_logs / $per_page);
+
+echo '<div class="wrap"><h1>Page Visit Logs</h1>';
+echo '<table class="wp-list-table widefat fixed striped">';
+echo '<thead><tr><th>Time</th><th>IP</th><th>URL</th><th>Parameters</th></tr></thead>';
+echo '<tbody>';
+foreach ($logs as $log) {
+    echo '<tr>';
+    echo '<td>' . esc_html($log['time']) . '</td>';
+    echo '<td>' . esc_html($log['ip']) . '</td>';
+    echo '<td>' . esc_url($log['url']) . '</td>';
+    echo '<td>' . esc_html($log['params']) . '</td>';
+    echo '</tr>';
+}
+echo '</tbody></table>';
+
+// Pagination
+echo '<div class="tablenav"><div class="tablenav-pages">';
+$page_links = paginate_links([
+    'base' => add_query_arg('paged', '%#%'),
+    'format' => '',
+    'prev_text' => __('&laquo;'),
+    'next_text' => __('&raquo;'),
+    'total' => $total_pages,
+    'current' => $current_page
+]);
+echo $page_links;
+echo '</div></div>';
+
+echo '<a href="' . admin_url('admin.php?page=page-visit-logs&action=export_to_csv') . '" class="button button-primary">Export to Excel</a>';
+
+echo '</div>'; // Close wrap
+
