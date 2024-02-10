@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name: Page Visit Logger
- * Description: Logs page visits along with query parameters, IPs, and shows them in an admin dashboard.
+ * Description: Logs page visits along with query parameters, IPs, and shows them in an admin dashboard, with export to CSV functionality.
  * Version: 1.0
- * Author: aAAYSHika Goenka 
+ * Author: AAYSHika Goenka
  * Url: https://github.com/aaditya-cpu
  */
 
@@ -31,6 +31,13 @@ add_action('admin_menu', function() {
         'dashicons-visibility',        // Icon URL
         6                              // Position in menu
     );
+});
+
+// Add action for admin_init to handle the CSV export.
+add_action('admin_init', function() {
+    if (isset($_GET['page']) && $_GET['page'] === 'page-visit-logger' && isset($_GET['action']) && $_GET['action'] === 'export_csv') {
+        require_once PVL_PLUGIN_DIR . 'export/export-to-csv.php';
+    }
 });
 
 // Function to display the admin dashboard page.

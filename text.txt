@@ -42,49 +42,106 @@ Directory: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logge
 FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/logger/class-page-visit-logger.php
 Contents:
 <?php
-
-if (!class_exists('Page_Visit_Logger')) {
     class Page_Visit_Logger {
-        public static function init() {
-            add_action('admin_menu', [__CLASS__, 'add_admin_menu']);
-            add_action('template_redirect', [__CLASS__, 'log_page_visit']);
+        // Adjust your plugin activation method to add geolocation columns to your table
+        public static function plugin_activation() {
+            global $wpdb;
+            $table_name = $wpdb->prefix . 'page_visit_logs';
+            $charset_collate = $wpdb->get_charset_collate();
+    
+            $sql = "CREATE TABLE $table_name (
+                id mediumint(9) NOT NULL AUTO_INCREMENT,
+                time datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
+                url text NOT NULL,
+                ip varchar(100) NOT NULL,
+                params text NOT NULL,
+                country varchar(100),
+                regionName varchar(100),
+                city varchar(100),
+                zip varchar(20),
+                lat float,
+                lon float,
+                isp varchar(100),
+                org varchar(100),
+                as_info varchar(100),
+                mobile boolean,
+                proxy boolean,
+                hosting boolean,
+                PRIMARY KEY  (id)
+            ) $charset_collate;";
+    
+            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+            dbDelta($sql);
         }
-
-        public static function log_page_visit() {
-            if (!is_user_logged_in()) {
-                global $wpdb;
-                $table_name = $wpdb->prefix . 'page_visit_logs';
-                $current_url = home_url(add_query_arg($_GET));
-                $query_params = http_build_query($_GET);
-                $ip_address = $_SERVER['REMOTE_ADDR'];
-
+    
+        // Method to fetch geolocation data from the IP API
+        private static function fetch_geolocation_data($ip) {
+            $api_url = "http://ip-api.com/json/$ip?fields=status,message,country,countryCode,region,regionName,city,district,zip,lat,lon,offset,isp,org,as,reverse,mobile,proxy,hosting";
+            $response = wp_remote_get($api_url);
+    
+            if (is_wp_error($response)) {
+                return false; // Bail early on error
+            }
+    
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true); // Decode JSON response into an associative array
+    
+            if ($data['status'] !== 'success') {
+                return false; // Bail if the API did not return a success status
+            }
+    
+            return $data;
+        }
+    
+        // Adjust your log_visit method to include geolocation fetching and storing
+        public static function log_visit() {
+            global $wpdb;
+            $table_name = $wpdb->prefix . 'page_visit_logs';
+    
+            $url = home_url(add_query_arg(null, null));
+            $parsed_url = parse_url($url);
+            $query_params = isset($parsed_url['query']) ? $parsed_url['query'] : 'None';
+            $ip = $_SERVER['REMOTE_ADDR'];
+            $current_time = current_time('mysql');
+            $geolocationData = self::fetch_geolocation_data($ip);
+    
+            if ($geolocationData) {
                 $wpdb->insert(
                     $table_name,
-                    [
-                        'time' => current_time('mysql', 1),
-                        'url' => $current_url,
-                        'query_params' => $query_params,
-                        'ip_address' => $ip_address,
-                    ]
+                    array(
+                        'time' => $current_time,
+                        'url' => $url,
+                        'ip' => $ip,
+                        'params' => $query_params,
+                        'country' => $geolocationData['country'],
+                        'regionName' => $geolocationData['regionName'],
+                        'city' => $geolocationData['city'],
+                        'zip' => $geolocationData['zip'],
+                        'lat' => $geolocationData['lat'],
+                        'lon' => $geolocationData['lon'],
+                        'isp' => $geolocationData['isp'],
+                        'org' => $geolocationData['org'],
+                        'as_info' => $geolocationData['as'],
+                        'mobile' => $geolocationData['mobile'],
+                        'proxy' => $geolocationData['proxy'],
+                        'hosting' => $geolocationData['hosting'],
+                    )
                 );
             }
         }
+    // Method to retrieve visits for admin display, including pagination
+    public static function get_visits($per_page = 100, $page_number = 1) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'page_visit_logs';
 
-        public static function add_admin_menu() {
-            add_menu_page(
-                'Page Visit Logs',
-                'Visit Logs',
-                'manage_options',
-                'page-visit-logs',
-                [__CLASS__, 'display_admin_page'],
-                'dashicons-visibility',
-                6
-            );
-        }
+        $offset = ($page_number - 1) * $per_page;
+        $query = $wpdb->prepare(
+            "SELECT * FROM $table_name ORDER BY time DESC LIMIT %d, %d;",
+            $offset, $per_page
+        );
 
-        public static function display_admin_page() {
-            include_once plugin_dir_path(__FILE__) . '/../views/admin-page.php';
-        }
+        $results = $wpdb->get_results($query);
+        return $results;
     }
 }
 
@@ -93,40 +150,42 @@ Contents:
 <?php
 /**
  * Plugin Name: Page Visit Logger
- * Description: Logs page visits with query parameters, IPs, and supports exporting to Excel.
+ * Description: Logs page visits along with query parameters, IPs, and shows them in an admin dashboard.
  * Version: 1.0
- * Author: Aaditya Goenka
+ * Author: aAAYSHika Goenka 
+ * Url: https://github.com/aaditya-cpu
  */
 
-if (!defined('ABSPATH')) {
-    exit; // Exit if accessed directly.
+defined('ABSPATH') or die('No script kiddies please!');
+
+define('PVL_PLUGIN_DIR', plugin_dir_path(__FILE__));
+
+// Include the logger class file.
+require_once PVL_PLUGIN_DIR . 'logger/class-page-visit-logger.php';
+
+// Register activation hook to create the database table.
+register_activation_hook(__FILE__, ['Page_Visit_Logger', 'plugin_activation']);
+
+// Hook into WordPress to log page visits.
+add_action('template_redirect', ['Page_Visit_Logger', 'log_visit']);
+
+// Add an admin menu item for the plugin.
+add_action('admin_menu', function() {
+    add_menu_page(
+        'Page Visit Logs',             // Page title
+        'Visit Logs',                  // Menu title
+        'manage_options',              // Capability required to see the page
+        'page-visit-logger',           // Menu slug
+        'pvl_admin_page_display',      // Function to display the admin page
+        'dashicons-visibility',        // Icon URL
+        6                              // Position in menu
+    );
+});
+
+// Function to display the admin dashboard page.
+function pvl_admin_page_display() {
+    include PVL_PLUGIN_DIR . 'views/admin-page.php';
 }
-
-function pvlogger_create_table() {
-    global $wpdb;
-    $table_name = $wpdb->prefix . 'page_visit_logs';
-    $charset_collate = $wpdb->get_charset_collate();
-
-    $sql = "CREATE TABLE $table_name (
-        id mediumint(9) NOT NULL AUTO_INCREMENT,
-        time datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
-        url varchar(255) NOT NULL,
-        query_params text NOT NULL,
-        ip_address varchar(100) NOT NULL,
-        PRIMARY KEY  (id)
-    ) $charset_collate;";
-
-    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-    dbDelta($sql);
-}
-
-register_activation_hook(__FILE__, 'pvlogger_create_table');
-
-require_once __DIR__ . '/logger/class-page-visit-logger.php';
-require_once __DIR__ . '/export/export-to-excel.php';
-
-add_action('plugins_loaded', ['Page_Visit_Logger', 'init']);
-
 
 FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/text.txt
 Contents:
@@ -135,52 +194,86 @@ Directory: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logge
 FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/views/admin-page.php
 Contents:
 <?php
+// Check user permissions
+if (!current_user_can('manage_options')) {
+  wp_die(__('You do not have sufficient permissions to access this page.'));
+}
 
+// Get current page number
+$current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+
+// Use the Page_Visit_Logger class to get visits
+$visits = Page_Visit_Logger::get_visits(100, $current_page);
+
+// Calculate total pages
 global $wpdb;
 $table_name = $wpdb->prefix . 'page_visit_logs';
-$per_page = 100;
-$current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
-$offset = ($current_page - 1) * $per_page;
+$total_items = $wpdb->get_var("SELECT COUNT(id) FROM $table_name");
+$total_pages = ceil($total_items / 100);
+?>
 
-// Retrieve the logs from the database.
-$logs = $wpdb->get_results($wpdb->prepare(
-    "SELECT * FROM $table_name ORDER BY time DESC LIMIT %d OFFSET %d;",
-    $per_page,
-    $offset
-), ARRAY_A);
+<div class="wrap">
+  <h1>Page Visit Logs</h1>
+  <table class="wp-list-table widefat fixed striped">
+    <thead>
+      <tr>
+        <th>Date & Time</th>
+        <th>URL</th>
+        <th>IP Address & Geolocation</th>
+        <th>Parameters</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php foreach ($visits as $visit): ?>
+        <tr>
+            <td><?php echo esc_html($visit->time); ?></td>
+            <td><?php echo esc_url($visit->url); ?></td>
+            <td>
+                <?php 
+                echo esc_html($visit->ip);
+                if (isset($visit->country) || isset($visit->city)) {
+                    echo "<br>";
+                    echo "Country: " . esc_html($visit->country ?? 'Unknown') . ", City: " . esc_html($visit->city ?? 'Unknown');
+                }
+                if (isset($visit->isp)) {
+                    echo "<br>";
+                    echo "ISP: " . esc_html($visit->isp);
+                }
+                if (isset($visit->mobile)) {
+                    echo ", Mobile: " . (esc_html($visit->mobile) ? "Yes" : "No");
+                }
+                ?>
+            </td>
+            <td><?php echo esc_html($visit->params); ?></td>
+        </tr>
+      <?php endforeach; ?>
+      <?php if (empty($visits)): ?>
+        <tr>
+            <td colspan="4">No visits logged yet.</td>
+        </tr>
+      <?php endif; ?>
+    </tbody>
+  </table>
 
-// Calculate total logs for pagination.
-$total_logs = $wpdb->get_var("SELECT COUNT(id) FROM $table_name;");
-$total_pages = ceil($total_logs / $per_page);
-
-echo '<div class="wrap"><h1>Page Visit Logs</h1>';
-echo '<table class="wp-list-table widefat fixed striped">';
-echo '<thead><tr><th>Time</th><th>IP</th><th>URL</th><th>Parameters</th></tr></thead>';
-echo '<tbody>';
-foreach ($logs as $log) {
-    echo '<tr>';
-    echo '<td>' . esc_html($log['time']) . '</td>';
-    echo '<td>' . esc_html($log['ip']) . '</td>';
-    echo '<td>' . esc_url($log['url']) . '</td>';
-    echo '<td>' . esc_html($log['params']) . '</td>';
-    echo '</tr>';
-}
-echo '</tbody></table>';
-
-// Pagination
-echo '<div class="tablenav"><div class="tablenav-pages">';
-$page_links = paginate_links([
-    'base' => add_query_arg('paged', '%#%'),
-    'format' => '',
-    'prev_text' => __('&laquo;'),
-    'next_text' => __('&raquo;'),
-    'total' => $total_pages,
-    'current' => $current_page
-]);
-echo $page_links;
-echo '</div></div>';
-
-echo '<a href="' . admin_url('admin.php?page=page-visit-logs&action=export_to_csv') . '" class="button button-primary">Export to Excel</a>';
-
-echo '</div>'; // Close wrap
+  <?php if ($total_pages > 1): ?>
+    <div class="tablenav">
+      <div class="tablenav-pages">
+        <span class="pagination-links">
+          <?php if ($current_page > 1): ?>
+            <a class="first-page button" href="?page=page-visit-logger&paged=1"><span class="screen-reader-text">First page</span></a>
+            <a class="prev-page button" href="?page=page-visit-logger&paged=<?php echo $current_page - 1; ?>"><span class="screen-reader-text">Previous page</span></a>
+          <?php endif; ?>
+          <span class="paging-input">
+            <label for="current-page-selector" class="screen-reader-text">Current Page</label>
+            <input class="current-page" id="current-page-selector" type="text" name="paged" value="<?php echo $current_page; ?>" size="2" aria-describedby="table-paging"> of <span class="total-pages"><?php echo $total_pages; ?></span>
+          </span>
+          <?php if ($current_page < $total_pages): ?>
+            <a class="next-page button" href="?page=page-visit-logger&paged=<?php echo $current_page + 1; ?>"><span class="screen-reader-text">Next page</span></a>
+            <a class="last-page button" href="?page=page-visit-logger&paged=<?php echo $total_pages; ?>"><span class="screen-reader-text">Last page</span></a>
+          <?php endif; ?>
+        </span>
+      </div>
+    </div>
+  <?php endif; ?>
+</div>
 

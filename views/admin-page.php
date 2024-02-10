@@ -18,6 +18,7 @@ $total_pages = ceil($total_items / 100);
 ?>
 
 <div class="wrap">
+  <?php echo '<a href="' . esc_url(admin_url('admin.php?page=page-visit-logger&action=export_csv')) . '" class="button button-primary">Export as CSV</a>';?>
   <h1>Page Visit Logs</h1>
   <table class="wp-list-table widefat fixed striped">
     <thead>
