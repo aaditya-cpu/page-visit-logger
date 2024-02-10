@@ -3,7 +3,7 @@
  * Plugin Name: Page Visit Logger
  * Description: Logs page visits along with query parameters, IPs, and shows them in an admin dashboard, with export to CSV functionality.
  * Version: 1.0
- * Author: AAYSHika Goenka
+ * Author: Aashika Goenka
  * Url: https://github.com/aaditya-cpu
  */
 
