@@ -16,7 +16,7 @@ function export_logs_to_csv() {
     $output = fopen('php://output', 'w');
 
     // Column headers in the CSV file
-    fputcsv($output, ['Time', 'URL', 'IP Address', 'Country', 'Region', 'City', 'ISP', 'Mobile']);
+    fputcsv($output, ['Time', 'URL' , 'params', 'IP Address', 'Country', 'Region', 'City', 'ISP', 'Mobile']);
 
     // Fetch logs from the database
     $logs = $wpdb->get_results("SELECT * FROM $table_name ORDER BY time DESC", ARRAY_A);
@@ -26,6 +26,7 @@ function export_logs_to_csv() {
         fputcsv($output, [
             $log['time'],
             $log['url'],
+            $log['params'],
             $log['ip'],
             $log['country'],
             $log['regionName'],
