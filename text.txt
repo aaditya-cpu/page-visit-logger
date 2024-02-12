@@ -1,42 +1,54 @@
 Directory: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/export
-FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/export/export-to-excel.php
+FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/export/export-to-csv.php
 Contents:
 <?php
 
-// Check for current user capabilities
-if (!current_user_can('manage_options')) {
-    wp_die('You do not have sufficient permissions to access this page.');
-}
-
+// Function to export logs to CSV
 function export_logs_to_csv() {
     global $wpdb;
     $table_name = $wpdb->prefix . 'page_visit_logs';
 
+    // Set the filename with the current date
     $filename = 'page-visits-' . date('Ymd') . '.csv';
 
+    // Set the header to download the file instead of displaying it
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
 
+    // Open PHP output stream as file
     $output = fopen('php://output', 'w');
 
-    // Column headers
-    fputcsv($output, ['Time', 'URL', 'Query Params', 'IP Address']);
+    // Column headers in the CSV file
+    fputcsv($output, ['Time', 'URL' , 'params', 'IP Address', 'Country', 'Region', 'City', 'ISP', 'Mobile']);
 
-    // Get data from database
+    // Fetch logs from the database
     $logs = $wpdb->get_results("SELECT * FROM $table_name ORDER BY time DESC", ARRAY_A);
 
+    // Loop through each log entry and add it to the CSV
     foreach ($logs as $log) {
-        fputcsv($output, [$log['time'], $log['url'], $log['params'], $log['ip']]);
+        fputcsv($output, [
+            $log['time'],
+            $log['url'],
+            $log['params'],
+            $log['ip'],
+            $log['country'],
+            $log['regionName'],
+            $log['city'],
+            $log['isp'],
+            $log['mobile'] ? 'Yes' : 'No' // Assuming 'mobile' is stored as a boolean
+        ]);
     }
 
+    // Close the output stream
     fclose($output);
     exit;
 }
 
-// Trigger export function based on a custom action or condition
-if (isset($_GET['action']) && $_GET['action'] == 'export_to_csv') {
-    add_action('admin_init', 'export_logs_to_csv');
+// Check if the current request is for the CSV export
+if (isset($_GET['action']) && $_GET['action'] == 'export_csv') {
+    export_logs_to_csv();
 }
+?>
 
 Directory: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/logger
 FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/logger/class-page-visit-logger.php
@@ -150,9 +162,9 @@ Contents:
 <?php
 /**
  * Plugin Name: Page Visit Logger
- * Description: Logs page visits along with query parameters, IPs, and shows them in an admin dashboard.
+ * Description: Logs page visits along with query parameters, IPs, and shows them in an admin dashboard, with export to CSV functionality.
  * Version: 1.0
- * Author: aAAYSHika Goenka 
+ * Author: Aashika Goenka
  * Url: https://github.com/aaditya-cpu
  */
 
@@ -182,13 +194,52 @@ add_action('admin_menu', function() {
     );
 });
 
+// Add action for admin_init to handle the CSV export.
+add_action('admin_init', function() {
+    if (isset($_GET['page']) && $_GET['page'] === 'page-visit-logger' && isset($_GET['action']) && $_GET['action'] === 'export_csv') {
+        require_once PVL_PLUGIN_DIR . 'export/export-to-csv.php';
+    }
+});
+
 // Function to display the admin dashboard page.
 function pvl_admin_page_display() {
     include PVL_PLUGIN_DIR . 'views/admin-page.php';
 }
 
-FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/text.txt
+FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/README.md
 Contents:
+Page Visit Logger
+Description
+
+The Page Visit Logger is a WordPress plugin designed to log and display page visits along with query parameters, IP addresses, and geolocation data in the WordPress admin dashboard. It also supports exporting the logs to CSV for further analysis.
+Features
+
+    Logs each page visit, including the date and time, URL visited, IP address, and query parameters.
+    Retrieves geolocation data for each IP address, including country, region, city, ISP, and whether the access was from a mobile device.
+    Displays logged visits in an admin dashboard with pagination.
+    Export functionality to download the visit logs as a CSV file.
+
+Installation
+
+    Upload the page-visit-logger folder to the /wp-content/plugins/ directory.
+    Activate the plugin through the 'Plugins' menu in WordPress.
+    The "Visit Logs" menu in the admin dashboard will now be available to view and export page visit logs.
+
+Usage
+
+Navigate to the "Visit Logs" page in your WordPress admin dashboard to view the list of page visits. Each log entry includes the date and time of the visit, the URL visited, IP address, query parameters, and geolocation data. Use the pagination controls to navigate through the logs. Click the "Export to CSV" button to download the logs.
+Requirements
+
+    WordPress 5.0 or higher.
+    PHP 7.2 or higher.
+
+License
+
+GPLv2 or later
+Author
+
+[Aaditya Goenka](https://github.com/aaditya-cpu)
+
 
 Directory: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/views
 FilePath: /opt/lampp/htdocs/draybarotraumas/wp-content/plugins/page-visit-logger/views/admin-page.php
@@ -213,6 +264,7 @@ $total_pages = ceil($total_items / 100);
 ?>
 
 <div class="wrap">
+  <?php echo '<a href="' . esc_url(admin_url('admin.php?page=page-visit-logger&action=export_csv')) . '" class="button button-primary">Export as CSV</a>';?>
   <h1>Page Visit Logs</h1>
   <table class="wp-list-table widefat fixed striped">
     <thead>

@@ -39,6 +39,7 @@ add_action('admin_init', function() {
         require_once PVL_PLUGIN_DIR . 'export/export-to-csv.php';
     }
 });
+error_log('Attempting to require: ' . PVL_PLUGIN_DIR . 'export/export-to-csv.php');
 
 // Function to display the admin dashboard page.
 function pvl_admin_page_display() {
